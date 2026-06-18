@@ -51,7 +51,7 @@ Docker-managed volumes store data in Docker's internal storage (`/var/lib/docker
 
 **1. Clone the repository:**
 ```bash
-git clone <repo_url>
+git clone https://github.com/MatheusViuge/inception.git
 cd inception
 ```
 
