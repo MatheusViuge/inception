@@ -89,7 +89,7 @@ help:
 	@echo "$(BLUE)  make config$(RESET)   → valida docker-compose.yml"
 	@echo "$(RED)  make clean$(RESET)    → remove containers + volumes"
 	@echo "$(RED)  make fclean$(RESET)   → remove também imagens"
-	@echo "$(BOLD)$(RED)  make reset	→ reinicia do zero o projeto"
+	@echo "$(BOLD)$(RED)  make reset$(RESET)	→ reinicia do zero o projeto"
 	@echo "$(CYAN)  make help$(RESET)     → mostra esta ajuda\n"
 
 .PHONY: all up down start stop restart re build ps logs config clean fclean status help reset
