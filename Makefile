@@ -67,6 +67,16 @@ fclean: clean
 
 status: ps
 
+reset:
+	@echo "$(BOLD)$(RED)💣 [$(NAME)] Resetando tudo do zero...$(RESET)"
+	@$(COMPOSE) -f $(COMPOSE_FILE) down -v
+	@docker image prune -af
+	@sudo rm -rf /home/mviana/data/mariadb/*
+	@sudo rm -rf /home/mviana/data/wordpress/*
+	@echo "$(BOLD)$(GREEN)🚀 [$(NAME)] Subindo do zero...$(RESET)"
+	@$(COMPOSE) -f $(COMPOSE_FILE) up -d --build
+	@echo "$(BOLD)$(GREEN)✅ [$(NAME)] Pronto!$(RESET)"
+
 help:
 	@echo "$(BOLD)$(CYAN)\n📘 Comandos disponíveis:\n$(RESET)"
 	@echo "$(GREEN)  make up$(RESET)       → sobe os containers (build incluso)"
@@ -79,17 +89,7 @@ help:
 	@echo "$(BLUE)  make config$(RESET)   → valida docker-compose.yml"
 	@echo "$(RED)  make clean$(RESET)    → remove containers + volumes"
 	@echo "$(RED)  make fclean$(RESET)   → remove também imagens"
+	@echo "$(BOLD)$(RED) make reset		→ reinicia do zero o projeto"
 	@echo "$(CYAN)  make help$(RESET)     → mostra esta ajuda\n"
 
 .PHONY: all up down start stop restart re build ps logs config clean fclean status help reset
-
-reset:
-	@echo "$(BOLD)$(RED)💣 [$(NAME)] Resetando tudo do zero...$(RESET)"
-	@$(COMPOSE) -f $(COMPOSE_FILE) down -v
-	@docker image prune -af
-	@sudo rm -rf /home/mviana/data/mariadb/*
-	@sudo rm -rf /home/mviana/data/wordpress/*
-	@echo "$(BOLD)$(GREEN)🚀 [$(NAME)] Subindo do zero...$(RESET)"
-	@$(COMPOSE) -f $(COMPOSE_FILE) up -d --build
-	@echo "$(BOLD)$(GREEN)✅ [$(NAME)] Pronto!$(RESET)"
-
