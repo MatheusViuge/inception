@@ -384,8 +384,10 @@ echo "Arquivos alterados: $ALTERED_FILES"
 # 7/9 — CONFIGURAR /etc/hosts
 # ============================================================
 #
-# Remove uma entrada anterior do mesmo domínio, se existir,
-# e adiciona:
+# Remove uma entrada anterior EXATA do domínio, caso exista,
+# preservando todas as outras linhas do /etc/hosts.
+#
+# Depois adiciona:
 #
 #   127.0.0.1    <login>.42.fr
 
@@ -401,35 +403,57 @@ cleanup_hosts_tmp()
 
 trap cleanup_hosts_tmp EXIT
 
-awk -v domain="$DOMAIN" '
-{
-	remove = 0
+while IFS= read -r line || [ -n "$line" ]; do
 
-	for (i = 2; i <= NF; i++)
-	{
-		if ($i == domain)
-		{
-			remove = 1
+	# Pega somente a parte anterior a um comentário.
+	#
+	# Exemplo:
+	#
+	# 127.0.0.1 localhost # comentário
+	#
+	# vira temporariamente:
+	#
+	# 127.0.0.1 localhost
+	content="${line%%#*}"
+
+	# Divide a linha em campos somente para verificar
+	# se o domínio já existe nela.
+	read -r -a fields <<< "$content"
+
+	found=0
+
+	# O primeiro campo normalmente é o IP.
+	# A partir do segundo ficam os hostnames.
+	for ((i = 1; i < ${#fields[@]}; i++)); do
+
+		if [ "${fields[$i]}" = "$DOMAIN" ]; then
+			found=1
 			break
-		}
-	}
+		fi
 
-	if (!remove)
-		print
-}
+	done
 
-END
-{
-	print "127.0.0.1\t" domain
-}
-' /etc/hosts > "$HOSTS_TMP"
+	# Se esta linha NÃO contém exatamente o domínio,
+	# preservamos ela sem nenhuma alteração.
+	if [ "$found" -eq 0 ]; then
+		printf '%s\n' "$line" >> "$HOSTS_TMP"
+	fi
 
+done < /etc/hosts
+
+# Adiciona a entrada correta ao final.
+printf '127.0.0.1\t%s\n' "$DOMAIN" >> "$HOSTS_TMP"
+
+# Como já estamos executando como root,
+# podemos substituir o conteúdo do arquivo diretamente.
 cat "$HOSTS_TMP" > /etc/hosts
 
 rm -f "$HOSTS_TMP"
+
 trap - EXIT
 
-echo "Adicionado: 127.0.0.1 $DOMAIN"
+echo "Adicionado:"
+echo "  127.0.0.1	$DOMAIN"
 
 # ============================================================
 # 8/9 — CRIAR srcs/.env
@@ -534,24 +558,34 @@ fi
 
 echo -n "[TESTE] /etc/hosts.............. "
 
-awk -v domain="$DOMAIN" '
-$1 == "127.0.0.1"
-{
-	for (i = 2; i <= NF; i++)
-	{
-		if ($i == domain)
-			found = 1
-	}
-}
+HOST_OK=0
 
-END
-{
-	exit !found
-}
-' /etc/hosts \
-	|| die "$DOMAIN não está corretamente configurado em /etc/hosts."
+while IFS= read -r line || [ -n "$line" ]; do
 
-echo "OK"
+	content="${line%%#*}"
+
+	read -r -a fields <<< "$content"
+
+	if [ "${fields[0]:-}" != "127.0.0.1" ]; then
+		continue
+	fi
+
+	for ((i = 1; i < ${#fields[@]}; i++)); do
+
+		if [ "${fields[$i]}" = "$DOMAIN" ]; then
+			HOST_OK=1
+			break 2
+		fi
+
+	done
+
+done < /etc/hosts
+
+if [ "$HOST_OK" -eq 1 ]; then
+	echo "OK"
+else
+	die "$DOMAIN não está corretamente configurado em /etc/hosts."
+fi
 
 echo -n "[TESTE] srcs/.env............... "
 [ -f "$ENV_TARGET" ] \
