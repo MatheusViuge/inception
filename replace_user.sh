@@ -271,7 +271,7 @@ fi
 #
 # Se sudo_is_configured retornar sucesso, esta etapa NÃO executa:
 #
-#   usermod -aG sudo ...
+#   /usr/sbin/usermod -aG sudo ...
 #   criação de /etc/sudoers.d/...
 #   chmod do sudoers
 #
@@ -294,7 +294,7 @@ else
 
 	# Adiciona ao grupo padrão de administradores do Debian.
 	if ! id -nG "$TARGET_USER" | tr ' ' '\n' | grep -qx "sudo"; then
-		usermod -aG sudo "$TARGET_USER"
+		/usr/sbin/usermod -aG sudo "$TARGET_USER"
 		echo "Usuário adicionado ao grupo sudo."
 	else
 		echo "Usuário já estava no grupo sudo."
@@ -344,7 +344,7 @@ if ! getent group docker >/dev/null 2>&1; then
 	groupadd docker
 fi
 
-usermod -aG docker "$TARGET_USER"
+/usr/sbin/usermod -aG docker "$TARGET_USER"
 
 systemctl enable --now docker
 
