@@ -13,8 +13,10 @@
 #   1. Valida a pasta do projeto.
 #   2. Entra como root usando su.
 #   3. Instala make, sudo, Docker e Docker Compose.
-#   4. Adiciona o usuário aos grupos sudo e docker.
-#   5. Cria e valida /etc/sudoers.d/<usuario>.
+#   4. Testa o acesso sudo existente e só configura se necessário.
+#      Se não estiver, adiciona o usuário ao grupo sudo e
+#      cria/valida /etc/sudoers.d/<usuario>.
+#   5. Adiciona o usuário ao grupo docker.
 #   6. Substitui "mviana" e "mviana-v" pelo novo login.
 #   7. Configura <login>.42.fr em /etc/hosts.
 #   8. Copia env.example para srcs/.env.
@@ -188,6 +190,38 @@ echo "Projeto       : $ROOT_DIR"
 echo
 
 # ============================================================
+# FUNÇÃO — VERIFICAR SE O SUDO JÁ ESTÁ CONFIGURADO
+# ============================================================
+#
+# Retorna sucesso (0) somente se o sudo reconhecer que o
+# TARGET_USER possui privilégios configurados.
+#
+# Isso verifica a configuração efetiva do sudo; não basta apenas
+# existir o comando "sudo" ou o usuário aparecer no grupo.
+#
+# Como esta parte do script já roda como root, podemos consultar
+# diretamente as permissões do outro usuário com:
+#
+#   sudo -l -U <usuario>
+#
+# Se essa verificação passar, a etapa de configuração do sudo será
+# completamente ignorada.
+
+sudo_is_configured()
+{
+	if ! command -v sudo >/dev/null 2>&1; then
+		return 1
+	fi
+
+	if sudo -l -U "$TARGET_USER" >/dev/null 2>&1; then
+		return 0
+	fi
+
+	return 1
+}
+
+
+# ============================================================
 # 1/9 — ATUALIZAR APT
 # ============================================================
 
@@ -230,26 +264,74 @@ else
 fi
 
 # ============================================================
-# 4/9 — CONFIGURAR SUDO
+# 4/9 — VERIFICAR / CONFIGURAR SUDO
 # ============================================================
+#
+# IMPORTANTE:
+#
+# Se sudo_is_configured retornar sucesso, esta etapa NÃO executa:
+#
+#   usermod -aG sudo ...
+#   criação de /etc/sudoers.d/...
+#   chmod do sudoers
+#
+# Ou seja: se o usuário já possui sudo válido, não alteramos nada.
+#
+# Só configuramos o sudo quando a verificação efetiva falhar.
 
 echo
-echo "[4/9] Configurando sudo para $TARGET_USER..."
+echo "[4/9] Verificando configuração existente do sudo..."
 
-usermod -aG sudo "$TARGET_USER"
+if sudo_is_configured; then
 
-cat > "$SUDOERS_FILE" <<EOF
+	echo "OK: $TARGET_USER já possui acesso sudo."
+	echo "Pulando completamente a configuração do sudo."
+
+else
+
+	echo "Sudo ainda não está configurado para $TARGET_USER."
+	echo "Configurando agora..."
+
+	# Adiciona ao grupo padrão de administradores do Debian.
+	if ! id -nG "$TARGET_USER" | tr ' ' '\n' | grep -qx "sudo"; then
+		usermod -aG sudo "$TARGET_USER"
+		echo "Usuário adicionado ao grupo sudo."
+	else
+		echo "Usuário já estava no grupo sudo."
+	fi
+
+	# Cria a regra individual somente porque a verificação efetiva
+	# mostrou que o usuário ainda não possuía sudo funcional.
+	#
+	# Primeiro criamos um arquivo temporário, validamos com visudo
+	# e só depois instalamos em /etc/sudoers.d/.
+	SUDOERS_TMP="$(mktemp)"
+
+	cat > "$SUDOERS_TMP" <<EOF
 $TARGET_USER ALL=(ALL:ALL) ALL
 EOF
 
-chmod 440 "$SUDOERS_FILE"
+	chmod 440 "$SUDOERS_TMP"
 
-if ! visudo -cf "$SUDOERS_FILE" >/dev/null 2>&1; then
-	rm -f "$SUDOERS_FILE"
-	die "A configuração criada em $SUDOERS_FILE é inválida."
+	if ! visudo -cf "$SUDOERS_TMP" >/dev/null 2>&1; then
+		rm -f "$SUDOERS_TMP"
+		die "A configuração sudoers gerada é inválida."
+	fi
+
+	install -o root -g root -m 440 \
+		"$SUDOERS_TMP" \
+		"$SUDOERS_FILE"
+
+	rm -f "$SUDOERS_TMP"
+
+	# Agora o sudo precisa reconhecer o usuário.
+	if ! sudo_is_configured; then
+		die "O sudo foi configurado, mas $TARGET_USER ainda não possui acesso."
+	fi
+
+	echo "Sudo configurado com sucesso."
+
 fi
-
-echo "Sudo configurado."
 
 # ============================================================
 # 5/9 — CONFIGURAR DOCKER SEM SUDO
@@ -417,16 +499,21 @@ systemctl is-active --quiet docker \
 	|| die "O serviço Docker não está ativo."
 echo "OK"
 
-echo -n "[TESTE] Grupo sudo.............. "
-id -nG "$TARGET_USER" \
-	| tr ' ' '\n' \
-	| grep -qx "sudo" \
-	|| die "$TARGET_USER não está no grupo sudo."
-echo "OK"
+# Não exigimos que exista especificamente:
+#
+#   /etc/sudoers.d/<usuario>
+#
+# porque, se o sudo já estava corretamente configurado antes
+# do script, nós propositalmente não alteramos essa configuração.
+#
+# Aqui testamos o que realmente importa: o usuário possui
+# permissão válida de sudo.
 
-echo -n "[TESTE] sudoers................. "
-visudo -cf "$SUDOERS_FILE" >/dev/null 2>&1 \
-	|| die "Configuração sudoers inválida."
+echo -n "[TESTE] Acesso sudo............. "
+
+sudo_is_configured \
+	|| die "$TARGET_USER não possui acesso sudo."
+
 echo "OK"
 
 echo -n "[TESTE] Grupo docker............ "
